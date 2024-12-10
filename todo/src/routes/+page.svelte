@@ -17,7 +17,8 @@
 			return;
 		}
 
-		socket = createSocketConnection(data.sessionToken);
+		// socket = createSocketConnection(data.sessionToken);
+		socket = createSocketConnection('fake-token');
 
 		socket.on('connect', () => {
 			connectionStatus = 'Connected';
