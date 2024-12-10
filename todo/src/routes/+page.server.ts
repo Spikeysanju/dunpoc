@@ -11,8 +11,13 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const result = await db.select().from(todos).where(eq(todos.userId, event.locals.user.id));
+	const sessionToken = event.cookies.get(auth.sessionCookieName);
 
-	return { user: event.locals.user, todos: result };
+	return { 
+		user: event.locals.user, 
+		todos: result,
+		sessionToken 
+	};
 };
 
 export const actions: Actions = {

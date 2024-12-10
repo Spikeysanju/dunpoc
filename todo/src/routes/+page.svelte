@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Todos } from '$lib/server/db/schema';
-	import { createSocketConnection, socket } from '$lib/socket';
+	import { createSocketConnection } from '$lib/socket';
 	import { enhance } from '$app/forms';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
@@ -9,13 +9,19 @@
 	let todos = $state<Todos[]>(data.todos);
 	let newTodo = $state<string>('');
 	let connectionStatus = $state<string>('Connecting...');
+	let socket = $state<ReturnType<typeof createSocketConnection>>();
 
 	onMount(async () => {
-		const socket = createSocketConnection(data.user.id);
+		if (!data.sessionToken) {
+			connectionStatus = 'No session token found';
+			return;
+		}
+
+		socket = createSocketConnection(data.sessionToken);
+
 		socket.on('connect', () => {
 			connectionStatus = 'Connected';
-			socket.emit('join', data.user.id);
-			socket.emit('fetchTodos', data.user.id);
+			socket?.emit('fetchTodos', data.user.id);
 		});
 
 		socket.on('connect_error', () => {
@@ -52,23 +58,22 @@
 	});
 
 	function addTodo() {
-		if (newTodo.trim()) {
+		if (newTodo.trim() && socket) {
 			socket.emit('addTodo', { title: newTodo, userId: data.user.id });
 			newTodo = '';
 		}
 	}
 
-	// fetch todo
 	function fetchTodos() {
-		socket.emit('fetchTodos', data.user.id);
+		socket?.emit('fetchTodos', data.user.id);
 	}
 
 	function toggleComplete(todo: Todos) {
-		socket.emit('updateTodo', { id: todo.id, completed: !todo.completed, userId: data.user.id });
+		socket?.emit('updateTodo', { id: todo.id, completed: !todo.completed, userId: data.user.id });
 	}
 
 	function deleteTodo(id: number) {
-		socket.emit('deleteTodo', { id, userId: data.user.id });
+		socket?.emit('deleteTodo', { id, userId: data.user.id });
 	}
 </script>
 
