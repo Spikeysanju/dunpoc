@@ -4,17 +4,7 @@ import { db } from '@/src/drizzle/db';
 import { todos } from '@/src/drizzle/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from "zod";
-import { verify } from 'jsonwebtoken';
-
-// Enhance token validation
-// const validateToken = (token: string): Promise<any> => {
-//   return new Promise((resolve, reject) => {
-//     verify(token, process.env.JWT_SECRET!, (err, decoded) => {
-//       if (err) reject(err);
-//       resolve(decoded);
-//     });
-//   });
-// };
+import { validateSessionToken } from '@/src/lib/server/auth';
 
 // Create an HTTP server
 const httpServer = createServer();
@@ -30,20 +20,28 @@ const io = new Server(httpServer, {
 });
 
 // Authentication middleware
-// io.use(async (socket, next) => {
-//   try {
-//     const token = socket.handshake.auth.token;
-//     if (!token) {
-//       throw new Error('Authentication error');
-//     }
+io.use(async (socket, next) => {
+  try {
+    const sessionToken = socket.handshake.auth.sessionToken;
+    if (!sessionToken) {
+      throw new Error('No session token provided');
+    }
 
-//     const decoded = await validateToken(token);
-//     socket.data.user = decoded; // Store user data in socket
-//     next();
-//   } catch (error) {
-//     next(new Error('Authentication error'));
-//   }
-// });
+    const { user, session } = await validateSessionToken(sessionToken);
+    
+    if (!user || !session) {
+      throw new Error('Invalid session');
+    }
+
+    // Store user data in socket for later use
+    socket.data.user = user;
+    socket.data.session = session;
+    
+    next();
+  } catch (error) {
+    next(new Error('Authentication failed'));
+  }
+});
 
 // Zod schema for todo validation
 const todoSchema = z.object({
@@ -53,32 +51,26 @@ const todoSchema = z.object({
 
 // Handle Socket.IO connections and events
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  const user = socket.data.user;
+  console.log("User connected:", socket.id, "userId:", user.id);
   
-  // Join user to their specific room
-  socket.on("join", (userId) => {
-    console.log("User joining room:", userId);
-    socket.join(userId);
-  });
+  // Auto-join user to their room
+  socket.join(user.id);
 
   // Fetch todos for a user
-  socket.on("fetchTodos", async (userId) => {
-    console.log("fetchTodos event received for userId:", userId);
+  socket.on("fetchTodos", async () => {
     try {
-      const result = await db.select().from(todos).where(eq(todos.userId, userId));
-      console.log("Fetched todos:", result);
-      // Emit to specific user's socket
+      const result = await db.select().from(todos).where(eq(todos.userId, socket.data.user.id));
       socket.emit("todos", result);
     } catch (error) {
-      console.error("Error fetching todos:", error);
       socket.emit("error", { message: "Error fetching todos" });
     }
   });
 
   // Add a new todo
-  socket.on("addTodo", async ({ title, userId }) => {
-    console.log("addTodo event received with data:", { title, userId });
+  socket.on("addTodo", async ({ title }) => {
     try {
+      const userId = socket.data.user.id;
       todoSchema.parse({ title, userId });
       const newTodo = await db.insert(todos).values({ title, userId }).returning();
       console.log("New todo added:", newTodo[0]);
@@ -93,8 +85,8 @@ io.on("connection", (socket) => {
   });
 
   // Update a todo
-  socket.on("updateTodo", async ({ id, completed, userId }) => {
-    console.log("updateTodo event received with data:", { id, completed, userId });
+  socket.on("updateTodo", async ({ id, completed }) => {
+    console.log("updateTodo event received with data:", { id, completed });
     try {
       const updatedTodo = await db
         .update(todos)
@@ -103,7 +95,7 @@ io.on("connection", (socket) => {
         .returning();
       
       if (updatedTodo.length > 0) {
-        io.to(userId).emit("todoUpdated", { id, completed });
+        io.to(socket.data.user.id).emit("todoUpdated", { id, completed });
         socket.emit("todoUpdateConfirmation", { id, completed });
       } else {
         throw new Error("Todo not found");
@@ -115,8 +107,8 @@ io.on("connection", (socket) => {
   });
 
   // Delete a todo
-  socket.on("deleteTodo", async ({ id, userId }) => {
-    console.log("deleteTodo event received with data:", { id, userId });
+  socket.on("deleteTodo", async ({ id }) => {
+    console.log("deleteTodo event received with data:", { id });
     try {
       const deletedTodo = await db
         .delete(todos)
@@ -124,7 +116,7 @@ io.on("connection", (socket) => {
         .returning();
       
       if (deletedTodo.length > 0) {
-        io.to(userId).emit("todoDeleted", id);
+        io.to(socket.data.user.id).emit("todoDeleted", id);
         socket.emit("todoDeleteConfirmation", id);
       } else {
         throw new Error("Todo not found");
