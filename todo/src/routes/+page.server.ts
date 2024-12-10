@@ -7,16 +7,16 @@ import { db } from '$lib/server/db';
 
 export const load: PageServerLoad = async (event) => {
 	if (!event.locals.user) {
-		return redirect(302, '/demo/lucia/login');
+		return redirect(302, '/login');
 	}
 
 	const result = await db.select().from(todos).where(eq(todos.userId, event.locals.user.id));
 	const sessionToken = event.cookies.get(auth.sessionCookieName);
 
-	return { 
-		user: event.locals.user, 
+	return {
+		user: event.locals.user,
 		todos: result,
-		sessionToken 
+		sessionToken
 	};
 };
 
@@ -28,6 +28,6 @@ export const actions: Actions = {
 		await auth.invalidateSession(event.locals.session.id);
 		auth.deleteSessionTokenCookie(event);
 
-		return redirect(302, '/demo/lucia/login');
+		return redirect(302, '/login');
 	}
 };
