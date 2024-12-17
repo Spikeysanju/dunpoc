@@ -127,6 +127,28 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Add this with the other socket events
+  socket.on("updateTodoTitle", async ({ id, title }) => {
+    console.log("updateTodoTitle event received:", { id, title });
+    try {
+      const updatedTodo = await db
+        .update(todos)
+        .set({ title })
+        .where(eq(todos.id, id))
+        .returning();
+      
+      if (updatedTodo.length > 0) {
+        io.to(socket.data.user.id).emit("todoTitleUpdated", { id, title });
+        socket.emit("todoTitleUpdateConfirmation", { id, title });
+      } else {
+        throw new Error("Todo not found");
+      }
+    } catch (error) {
+      console.error("Error updating todo title:", error);
+      socket.emit("error", { message: "Failed to update todo title" });
+    }
+  });
+
   socket.on("disconnect", () => {
     console.log("User disconnected:", socket.id);
   });

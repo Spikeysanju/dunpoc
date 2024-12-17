@@ -12,6 +12,8 @@
 	let newTodo = $state<string>('');
 	let connectionStatus = $state<string>('Connecting...');
 	let socket = $state<ReturnType<typeof createSocketConnection>>();
+	let editingId = $state<number | null>(null);
+	let editingText = $state<string>('');
 
 	onMount(async () => {
 		if (!data.sessionToken) {
@@ -54,6 +56,12 @@
 			todos = todos.filter((t) => t.id !== id);
 		});
 
+		socket.on('todoTitleUpdated', ({ id, title }) => {
+			const todo = todos.find((t) => t.id === id);
+			if (todo) todo.title = title;
+			editingId = null;
+		});
+
 		socket.on('error', (error) => {
 			alert(error.message);
 		});
@@ -77,84 +85,130 @@
 	function deleteTodo(id: number) {
 		socket?.emit('deleteTodo', { id, userId: data.user.id });
 	}
+
+	function startEditing(todo: Todos) {
+		editingId = todo.id;
+		editingText = todo.title || '';
+	}
+
+	function saveEdit() {
+		if (editingId && editingText.trim() && socket) {
+			socket.emit('updateTodoTitle', { id: editingId, title: editingText });
+		}
+	}
+
+	function cancelEdit() {
+		editingId = null;
+		editingText = '';
+	}
 </script>
 
-<div class="space-y-8" in:fade={{ duration: 300 }}>
-	<div class="flex items-center justify-between" in:slide={{ duration: 300, delay: 150 }}>
-		<div>
-			<h1 class="text-2xl font-semibold text-foreground/90">Welcome, {data.user.username}</h1>
-			<p class="text-sm text-muted-foreground mt-1 animate-in fade-in slide-in-from-left-1">
+<div class="max-w-2xl mx-auto px-4 py-8 space-y-12" in:fade={{ duration: 300 }}>
+	<!-- Header Section -->
+	<header class="border-b border-border/30 pb-6" in:slide={{ duration: 300, delay: 150 }}>
+		<h1 class="font-serif text-3xl text-foreground/90">{data.user.username}'s Tasks</h1>
+		<div class="flex items-center justify-between mt-4">
+			<p class="font-mono text-xs text-muted-foreground">
 				{connectionStatus} • ID: {data.user.id}
 			</p>
-		</div>
-		<div class="flex gap-2" in:slide={{ duration: 300, delay: 300, axis: 'x' }}>
-			<button
-				onclick={fetchTodos}
-				class="px-3 py-1.5 text-sm rounded-md bg-secondary hover:bg-secondary/80 text-secondary-foreground transition-all active:scale-95"
-			>
-				Refresh
-			</button>
-			<form method="post" action="?/logout" use:enhance>
+			<div class="flex gap-3 text-sm">
 				<button
-					class="px-3 py-1.5 text-sm rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive transition-all active:scale-95"
+					onclick={fetchTodos}
+					class="text-muted-foreground hover:text-foreground transition-colors"
 				>
-					Sign out
+					Refresh
 				</button>
-			</form>
+				<form method="post" action="?/logout" use:enhance>
+					<button class="text-destructive/70 hover:text-destructive transition-colors">
+						Sign out
+					</button>
+				</form>
+			</div>
 		</div>
-	</div>
+	</header>
 
 	{#if data.user}
-		<div class="flex gap-2" in:slide={{ duration: 300, delay: 450 }}>
-			<input
-				type="text"
-				bind:value={newTodo}
-				placeholder="What needs to be done?"
-				class="flex-1 px-4 py-2 rounded-lg bg-background/50 backdrop-blur-sm border border-input focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-				onkeydown={(e) => e.key === 'Enter' && addTodo()}
-			/>
-			<button
-				onclick={addTodo}
-				class="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all active:scale-95"
-			>
-				Add
-			</button>
-		</div>
-
-		<ul class="space-y-2">
-			{#each todos as todo (todo.id)}
-				<li
-					animate:flip={{ duration: 300 }}
-					in:scale|local={{ duration: 300, start: 0.95 }}
-					out:fade|local={{ duration: 200 }}
-					class="group flex items-center gap-3 px-4 py-3 rounded-lg bg-card/50 backdrop-blur-sm border border-border hover:border-border/80 transition-all hover:translate-x-1 hover:shadow-md"
+		<!-- Input Section -->
+		<div class="space-y-6" in:slide={{ duration: 300, delay: 450 }}>
+			<div class="flex gap-3">
+				<input
+					type="text"
+					bind:value={newTodo}
+					placeholder="What needs to be done?"
+					class="flex-1 px-0 py-2 bg-transparent border-b border-border/30 focus:border-primary/50 outline-none transition-all placeholder:text-muted-foreground/50"
+					onkeydown={(e) => e.key === 'Enter' && addTodo()}
+				/>
+				<button
+					onclick={addTodo}
+					class="font-medium text-primary hover:text-primary/80 transition-colors"
 				>
-					<input
-						type="checkbox"
-						checked={todo.completed}
-						onchange={() => toggleComplete(todo)}
-						class="w-4 h-4 rounded border-primary/20 text-primary focus:ring-primary transition-all"
-					/>
-					<span 
-						class="flex-1 transition-all duration-200 {todo.completed ? 'line-through text-muted-foreground' : ''}"
+					Add Task
+				</button>
+			</div>
+
+			<!-- Todo List -->
+			<ul class="space-y-4">
+				{#each todos as todo (todo.id)}
+					<li
+						animate:flip={{ duration: 300 }}
+						in:scale|local={{ duration: 300, start: 0.98 }}
+						out:fade|local={{ duration: 200 }}
+						class="group flex items-center gap-4 py-3 border-b border-border/10 hover:border-border/30 transition-all"
 					>
-						{todo.title}
-					</span>
-					<button
-						onclick={() => deleteTodo(todo.id)}
-						class="opacity-0 group-hover:opacity-100 px-2 py-1 rounded text-sm text-destructive hover:bg-destructive/10 transition-all duration-200"
-					>
-						Delete
-					</button>
-				</li>
-			{/each}
-		</ul>
+						<input
+							type="checkbox"
+							checked={todo.completed}
+							onchange={() => toggleComplete(todo)}
+							class="w-4 h-4 border-muted-foreground/30 text-primary/80 focus:ring-0 transition-colors"
+						/>
+						{#if editingId === todo.id}
+							<div class="flex-1 flex gap-2">
+								<input
+									type="text"
+									bind:value={editingText}
+									class="flex-1 px-2 py-1 bg-background border border-border rounded focus:border-primary/50 outline-none"
+									onkeydown={(e) => {
+										if (e.key === 'Enter') saveEdit();
+										if (e.key === 'Escape') cancelEdit();
+									}}
+								/>
+								<button
+									onclick={saveEdit}
+									class="text-xs text-primary hover:text-primary/80 transition-colors"
+								>
+									Save
+								</button>
+								<button
+									onclick={cancelEdit}
+									class="text-xs text-muted-foreground hover:text-destructive transition-colors"
+								>
+									Cancel
+								</button>
+							</div>
+						{:else}
+							<span 
+								class="flex-1 font-serif text-lg transition-all duration-200 {todo.completed ? 'line-through text-muted-foreground/50' : ''}"
+								ondblclick={() => startEditing(todo)}
+							>
+								{todo.title}
+							</span>
+						{/if}
+						<button
+							onclick={() => deleteTodo(todo.id)}
+							class="opacity-0 group-hover:opacity-100 text-xs text-muted-foreground hover:text-destructive transition-all duration-200"
+						>
+							Remove
+						</button>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{:else}
 		<div 
 			in:fade
-			class="text-center py-8 text-muted-foreground"
+			class="text-center py-12 text-muted-foreground font-serif text-lg"
 		>
-			Please log in to see your todos.
+			Please log in to see your tasks.
 		</div>
 	{/if}
 </div>
